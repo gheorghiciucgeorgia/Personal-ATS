@@ -1,9 +1,10 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
 import { saveAs } from 'file-saver';
 import jsPDF from 'jspdf';
 import { extractTextFromPDF } from './utils/pdf.js';
 import './App.css';
+import ScorePieRecharts from './components/ScorePieRecharts.js';
 
 interface Keyword {
   term: string;
@@ -26,13 +27,38 @@ interface AnalysisResult {
 }
 
 function App() {
+  const [cvText, setCvText] = useState<string>(() =>
+    sessionStorage.getItem('cvText') || ''
+  );
+  const [jobDescription, setJobDescription] = useState<string>(() =>
+    sessionStorage.getItem('jobDescription') || ''
+  );
+  const [report, setReport] = useState<AnalysisResult | null>(() => {
+    const saved = sessionStorage.getItem('report');
+    return saved ? JSON.parse(saved) : null;
+  });
+
   const [cvFile, setCvFile] = useState<File | null>(null);
-  const [cvText, setCvText] = useState<string>('');
-  const [jobDescription, setJobDescription] = useState('');
-  const [report, setReport] = useState<AnalysisResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [lastAnalyzed, setLastAnalyzed] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    sessionStorage.setItem('cvText', cvText);
+  }, [cvText]);
+
+  useEffect(() => {
+    sessionStorage.setItem('jobDescription', jobDescription);
+  }, [jobDescription]);
+
+  useEffect(() => {
+    if (report) {
+      sessionStorage.setItem('report', JSON.stringify(report));
+    } else {
+      sessionStorage.removeItem('report');
+    }
+  }, [report]);
 
   const openFileDialog = () => {
     fileInputRef.current?.click();
@@ -43,6 +69,8 @@ function App() {
     if (!file) return;
     setCvFile(file);
     setLoading(true);
+    setError('');
+
     try {
       if (file.type === 'application/pdf') {
         const text = await extractTextFromPDF(file);
@@ -53,14 +81,20 @@ function App() {
       }
     } catch (err) {
       console.error(err);
-      alert('Error extracting text from file');
+      setError('Error extracting text from file');
     }
     setLoading(false);
   };
 
   const handleAnalyze = async () => {
-    if ((!cvFile && !cvText) || !jobDescription) {
+    if (!cvText || !jobDescription) {
       setError('Please upload/paste CV and provide job description');
+      return;
+    }
+
+    const currentHash = cvText + '|||' + jobDescription;
+    if (currentHash === lastAnalyzed && report) {
+      setError('No changes detected. Modify CV or Job Description to re-analyze.');
       return;
     }
 
@@ -93,6 +127,7 @@ function App() {
       };
 
       setReport(result);
+      setLastAnalyzed(currentHash);
     } catch (err: unknown) {
       console.error(err);
       if (axios.isAxiosError(err)) {
@@ -105,6 +140,19 @@ function App() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleReset = () => {
+    setCvFile(null);
+    setCvText('');
+    setJobDescription('');
+    setReport(null);
+    setError('');
+    setLastAnalyzed('');
+
+    sessionStorage.removeItem('cvText');
+    sessionStorage.removeItem('jobDescription');
+    sessionStorage.removeItem('report');
   };
 
   const downloadReportPDF = () => {
@@ -198,21 +246,25 @@ function App() {
               <button onClick={handleAnalyze} disabled={loading} className='px-4 py-2 bg-(--accent-color) rounded disabled:opacity-50'>
                 {loading ? 'Analyzing...' : 'Scan'}
               </button>
-              <button onClick={() => { setCvFile(null); setCvText(''); setJobDescription(''); setReport(null); setError(''); }} className='px-4 py-2 bg-slate-200 rounded'>Reset</button>
+              <button onClick={handleReset} className='px-4 py-2 bg-slate-200 rounded'>Reset</button>
             </div>
           </div>
         </div>
 
         <div className='mt-6'>
-          {loading && <div className='text-sm text-slate-600'>Loading...</div>}
+          {/* {loading && <div className='text-sm text-slate-600'>Loading...</div>} */}
           {error && <div className='p-3 bg-red-100 text-red-700 rounded'>{error}</div>}
 
           {report && (
             <div className='mt-4 border rounded p-4 bg-slate-50'>
               <div className='flex items-center justify-between'>
-                <div>
-                  <div className="text-lg font-semibold">Score: {report.matchScore}%</div>
-                  <div className="text-sm text-slate-600">Experience: {report.experienceScore}% | Keywords: {matchedKeywords}/{totalKeywords}</div>
+                <div className='flex items-center gap-6'>
+                  <ScorePieRecharts value={report.matchScore} color='var(--accent-color)' label='Match' />
+                  <ScorePieRecharts value={report.experienceScore} color='#60a5fa' label='Experience' />
+                  <div>
+                    <div className="text-sm text-slate-600">Keywords: {matchedKeywords}/{totalKeywords}</div>
+                    <div className="text-xs text-slate-500">{report.generatedAt}</div>
+                  </div>
                 </div>
                 <div className='flex gap-2'>
                   <button onClick={downloadReportPDF} className='px-3 py-2 bg-(--accent-color) rounded'>Download PDF</button>
@@ -222,7 +274,7 @@ function App() {
               <div className='mt-4 grid grid-cols-1 md:grid-cols-3 gap-4'>
                 <div className='p-3 bg-white rounded shadow-sm'>
                   <div className='text-sm font-medium'>Keywords Match</div>
-                  <div className="text-sm mt-2 max-h-40 overflow-auto space-y-1">
+                  <div className="text-sm mt-2 max-h-107 overflow-auto space-y-1">
                     {report.keywords.map((kw, i) => (
                       <div key={i} className={kw.matched ? 'text-green-600' : 'text-red-600'}>
                         {kw.matched ? '✓' : '✗'} {kw.term}
