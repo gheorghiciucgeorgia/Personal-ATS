@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "composite": true,
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "module": "NodeNext",
+    "target": "es2020",
+    "moduleResolution": "nodenext",
+    "skipLibCheck": true,
+    "jsx": "react-jsx"
+  },
+  "include": ["src", "src/types"],
+  "exclude": ["node_modules", "dist"]
+}
