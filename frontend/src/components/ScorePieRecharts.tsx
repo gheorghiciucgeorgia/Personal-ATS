@@ -28,9 +28,9 @@ export default function ScorePieRecharts({ value, size = 140, color = 'var(--acc
                     <Cell fill="#e5e7eb" />
                 </Pie>
             </PieChart>
-            <div className="absolute inset-0 flex justify-center items-center content-center pl-2">
-                <div className="text-[18pt] font-bold">{Math.round(v)}%</div>
-                <div className="text-[11pt] text-(--secondary-color)">{label}</div>
+            <div className="absolute inset-0 flex flex-col justify-center items-center content-center pl-2">
+                <div className="text-[18px] font-bold">{Math.round(v)}%</div>
+                <div className="text-[11px]">{label}</div>
             </div>
         </div>
     );
