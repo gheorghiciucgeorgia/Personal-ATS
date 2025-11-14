@@ -10,7 +10,13 @@ interface Keyword {
   matched: boolean;
 }
 
-interface Skills {
+interface HardSkills {
+  matched: string[];
+  partial: string[];
+  missing: string[];
+}
+
+interface SoftSkills {
   matched: string[];
   partial: string[];
   missing: string[];
@@ -25,14 +31,23 @@ interface Checks {
   educationMatch?: { presentInCV: boolean; presentInJD: boolean; levelInCV?: string | null; levelInJD?: string | null; match: boolean; message: string };
 }
 
+interface RecruiterTips {
+  jobLevelMatch: { match: boolean; message: string };
+  measurableResults: { present: boolean; message: string };
+  wordCount: { count: number; limit: number; message: string }; // << add limit
+  webPresence: { present: boolean; message: string };
+}
+
 interface AnalysisResult {
   matchScore: number;
   experienceScore: number;
   keywords: Keyword[];
-  skills: Skills;
+  hardSkills: HardSkills;
+  softSkills: SoftSkills;
   recommendations: string[];
   generatedAt: string;
-  checks?: Checks; // new
+  checks?: Checks;
+  recruiterTips?: RecruiterTips; // << add
 }
 
 function App() {
@@ -73,7 +88,6 @@ function App() {
     fileInputRef.current?.click();
   };
 
-  // Replace normalizeForPrompt with a safe variant (no heading promotion)
   const normalizeForPrompt = (text = ''): string => {
     let t = text.replace(/\r\n?/g, '\n');
     t = t.replace(/([A-Za-z])-\s*\n\s*([A-Za-z])/g, '$1$2');
@@ -97,11 +111,10 @@ function App() {
 
     try {
       if (file.type === 'application/pdf') {
-        // Do NOT parse PDF on client; let the server do it
         setCvText('(PDF uploaded — text will be extracted and cleaned on Scan)');
       } else {
         const text = await file.text();
-        setCvText(normalizeForPrompt(text)); // << use normalizer for non-PDF
+        setCvText(normalizeForPrompt(text));
       }
     } catch (err) {
       console.error(err);
@@ -111,7 +124,6 @@ function App() {
     }
   };
 
-  // Send FormData correctly; let axios set the boundary, and name the file/blob
   const handleAnalyze = async () => {
     if (!cvText || !jobDescription) {
       setError('Please upload/paste CV and provide job description');
@@ -139,7 +151,6 @@ function App() {
       }
       formData.append('jobDescription', jobDescription);
 
-      // Do NOT set Content-Type manually; axios will add the proper multipart boundary
       const { data } = await axios.post('http://localhost:5000/analyze', formData);
 
       if (data.cleanedCvText) {
@@ -150,10 +161,12 @@ function App() {
         matchScore: data.matchScore,
         experienceScore: data.experienceScore,
         keywords: data.keywords || [],
-        skills: data.skills || { matched: [], partial: [], missing: [] },
+        hardSkills: data.hardSkills || { matched: [], partial: [], missing: [] },
+        softSkills: data.softSkills || { matched: [], partial: [], missing: [] },
         recommendations: data.recommendations || [],
         generatedAt: new Date().toLocaleString(),
-        checks: data.checks
+        checks: data.checks,
+        recruiterTips: data.recruiterTips // << add
       };
       setReport(result);
       setLastAnalyzed((cvText || '') + '|||' + jobDescription);
@@ -244,7 +257,7 @@ function App() {
   const matchedKeywords = report?.keywords.filter(k => k.matched).length || 0;
   const totalKeywords = report?.keywords.length || 0;
 
-  // Education tick logic: use backend decision directly
+
   const edu = report?.checks?.educationMatch;
   const eduOK = !!edu?.match;
 
@@ -259,28 +272,26 @@ function App() {
           <img className="w-[28%]" src='assets/11036340.svg' />
         </div>
 
-        <div className='font-(family-name:--font-rale) mt-6 grid grid-cols-1 md:grid-cols-2 gap-4 bg-[#abe7b24d] p-6 rounded-sm shadow-xl'>
-          <div>
-            <label className='block text-sm font-medium font-(family-name:--font-inter)'>CV (upload or paste)</label>
+        <div className='font-(family-name:--font-rale) mt-6 grid grid-cols-1 md:grid-cols-2 gap-4'>
+          <div className='border-2 border-(--accent-color) mr-3 shadow-sm'>
+            <label className='block text-sm font-medium font-(family-name:--font-inter) border-b-2 border-b-(--accent-color) p-4'>CV (upload or paste)</label>
             <input ref={fileInputRef} type="file" accept=".pdf,.txt,.docx,.doc" onChange={handleCVUpload} className='hidden' />
-            <textarea value={cvText} onChange={(e) => setCvText(e.target.value)} placeholder='Paste your CV here...' className='w-full h-48 mt-3 p-3 border rounded resize-none outline-none'></textarea>
+            <textarea value={cvText} onChange={(e) => setCvText(e.target.value)} placeholder='Paste your CV here...' className='w-full h-48 mt-3 p-3 resize-none outline-none'></textarea>
 
             <div className='w-full flex flex-col items-center'>
-              <button type="button" onClick={openFileDialog} className='border p-2 rounded-2xl border-(--accent-color) bg-(--accent-color) mt-2 cursor-pointer'>
+              <button type="button" onClick={openFileDialog} className='border p-2 rounded-2xl border-(--accent-color) bg-(--accent-color) mt-2 mb-3 cursor-pointer'>
                 <i className="fa-solid fa-file-import mr-2"></i>Upload File
               </button>
             </div>
 
-            <div className='text-xs text-slate-500 mt-3'>
-              <i className="fa-solid fa-lightbulb"></i> Suggestion: Use clear formats, separated sections: Skills, Experience, Education. <span className='font-medium'>Use a clear and concise format</span>
-            </div>
+
           </div>
 
-          <div>
-            <label className='block text-sm font-medium font-(family-name:--font-inter)'>Job Description</label>
-            <textarea value={jobDescription} onChange={(e) => setJobDescription(e.target.value)} placeholder='Paste the job description here...' className='w-full h-48 mt-3 p-3 border rounded resize-none outline-none'></textarea>
+          <div className='border-2 border-(--accent-color) shadow-sm'>
+            <label className='block text-sm font-medium font-(family-name:--font-inter) border-b-2 border-b-(--accent-color) p-4'>Job Description</label>
+            <textarea value={jobDescription} onChange={(e) => setJobDescription(e.target.value)} placeholder='Paste the job description here...' className='w-full h-48 mt-3 p-3 border-none resize-none outline-none'></textarea>
 
-            <div className='flex gap-2 mt-3'>
+            <div className='flex gap-2 mt-3 mb-3 ml-3'>
               <button onClick={handleAnalyze} disabled={loading} className='px-4 py-2 bg-(--accent-color) rounded disabled:opacity-50'>
                 {loading ? 'Analyzing...' : 'Scan'}
               </button>
@@ -289,15 +300,18 @@ function App() {
           </div>
         </div>
 
-        <div className='mt-6'>
+        <div className='font-(family-name:--font-rale) text-xs text-slate-500 mt-3'>
+          <i className="fa-solid fa-lightbulb"></i> Suggestion: Use clear formats, separated sections: Skills, Experience, Education. <span className='font-medium'>Use a clear and concise format</span>
+        </div>
+
+        <div className='mt-6 font-(family-name:--font-rale)'>
           {error && <div className='p-3 bg-red-100 text-red-700 rounded'>{error}</div>}
 
           {report && (
             <div className='mt-4 border rounded p-4 bg-slate-50'>
-              <div className='flex items-center justify-between'>
+              <div className='flex items-center justify-between font-(family-name:--font-inter)'>
                 <div className='flex items-center gap-6'>
                   <ScorePieRecharts value={report.matchScore} color='var(--accent-color)' label='Match' />
-                  <ScorePieRecharts value={report.experienceScore} color='var(--secondary-color)' label='Experience' />
                   <div>
                     <div className="text-sm text-slate-600">Keywords: {matchedKeywords}/{totalKeywords}</div>
                     <div className="text-xs text-slate-500">{report.generatedAt}</div>
@@ -312,13 +326,14 @@ function App() {
               </div>
 
               {/* Searchability / ATS Tips */}
-              <div className='text-2xl font-medium mt-10'>Searchability / ATS Tips</div>
+              <div className='text-2xl font-medium mt-10 font-(family-name:--font-inter)'>Searchability / ATS Tips</div>
+              <p className="mt-2">An Applicant Tracking System (ATS) is software used by ~90% of employers and recruiters to search resumes and manage hiring. Below is an assessment of how your resume performs in ATS and recruiter searches.</p>
               <div className='p-3 bg-white rounded shadow-sm mt-3'>
                 <div className="text-sm flex flex-col mt-2 space-y-2">
 
                   {/* Contact info */}
                   <div className='grid grid-cols-[160px_1fr] gap-4 items-start border-b-2 border-b-gray-200 p-3'>
-                    <div className='font-medium text-md'>Contact info</div>
+                    <div className='font-medium text-md font-(family-name:--font-inter)'>Contact info</div>
                     <ul className='list-none space-y-1'>
                       <li className='mb-3'>
                         <span className={report.checks?.contact.email ? 'text-green-600 mr-2 rounded-4xl py-1 px-2 bg-(--secondary-color)' : 'text-red-600 mr-2 rounded-4xl py-1 px-2 bg-[#faa5a5]'}>{report.checks?.contact.email ? '✓' : '✗'}</span>
@@ -337,7 +352,7 @@ function App() {
 
                   {/* Job title */}
                   <div className='grid grid-cols-[160px_1fr] gap-4 items-start border-b-2 border-b-gray-200 p-3'>
-                    <div className='font-medium text-md'>Job title</div>
+                    <div className='font-medium text-md font-(family-name:--font-inter)'>Job title</div>
                     <ul className='list-none space-y-1'>
                       <li className='mb-3'>
                         <span className={report.checks?.jobTitleMatch ? 'text-green-600 mr-2 rounded-4xl py-1 px-2 bg-(--secondary-color)' : 'text-red-600 mr-2 rounded-4xl py-1 px-2 bg-[#faa5a5]'}> {report.checks?.jobTitleMatch ? '✓' : '✗'}</span> {report.checks?.jobTitleMatch ? 'The CV matched the JD title' : 'The CV title does not match the Job Description title. Consider aligning your CV title with the job you are applying for to improve relevance and visibility to recruiters.'}
@@ -347,7 +362,7 @@ function App() {
 
                   {/* Sections */}
                   <div className='grid grid-cols-[160px_1fr] gap-4 items-start border-b-2 border-b-gray-200 p-3'>
-                    <div className='font-medium text-md'>Sections</div>
+                    <div className='font-medium text-md font-(family-name:--font-inter)'>Sections</div>
                     <ul className='list-none space-y-1'>
                       <li className='mb-3'>
                         <span className={report.checks?.sections.summary ? 'text-green-600 mr-2 rounded-4xl py-1 px-2 bg-(--secondary-color)' : 'text-red-600 mr-2 rounded-4xl py-1 px-2 bg-[#faa5a5]'}>{report.checks?.sections.summary ? '✓' : '✗'}</span>
@@ -370,7 +385,7 @@ function App() {
 
                   {/* Dates */}
                   <div className='grid grid-cols-[160px_1fr] gap-4 items-start border-b-2 border-b-gray-200 p-3'>
-                    <div className='font-medium text-md'>Dates Format</div>
+                    <div className='font-medium text-md font-(family-name:--font-inter)'>Dates Format</div>
                     <ul className='list-none space-y-1'>
                       <li className='mb-3'>
                         <span className={(report.checks?.dates.found && report.checks?.dates.looksConsistent) ? 'text-green-600 mr-2 rounded-4xl py-1 px-2 bg-(--secondary-color)' : 'text-orange-600'}>{(report.checks?.dates.found && report.checks?.dates.looksConsistent)
@@ -385,7 +400,7 @@ function App() {
 
                   {/* Education match */}
                   <div className='grid grid-cols-[160px_1fr] gap-4 items-start border-b-2 border-b-gray-200 p-3'>
-                    <div className='font-medium text-md'>Education match</div>
+                    <div className='font-medium text-md font-(family-name:--font-inter)'>Education match</div>
                     <ul className='list-none space-y-1'>
                       <li>
                         <span className={eduOK ? 'text-green-600 mr-2 rounded-4xl py-1 px-2 bg-(--secondary-color)' : 'text-red-600 mr-2 rounded-4xl py-1 px-2 bg-[#faa5a5]'}>{eduOK ? '✓' : '✗'}</span>
@@ -396,7 +411,7 @@ function App() {
 
                   {/* File */}
                   <div className='grid grid-cols-[160px_1fr] gap-4 items-start p-3'>
-                    <div className='font-medium text-md'>File Type</div>
+                    <div className='font-medium text-md font-(family-name:--font-inter)'>File Type</div>
                     <ul className='list-none space-y-1'>
                       <li className='mb-3'>
                         <span className={report.checks?.file.allowed ? 'text-green-600 mr-2 rounded-4xl py-1 px-2 bg-(--secondary-color)' : 'text-red-600 mr-2'}>  {report.checks?.file.allowed
@@ -413,10 +428,12 @@ function App() {
                 </div>
               </div>
 
-              <div className='text-2xl font-medium mt-10'>Hard Skills</div>
+              <div className='text-2xl font-medium mt-10 font-(family-name:--font-inter)'>Hard Skills</div>
+              <p className="mt-2">Hard skills are job‑specific, teachable, and measurable abilities (tools, software, technical processes) gained through formal education, training, or on‑the‑job practice, and they carry significant weight in your overall match score.</p>
+              <p className='text-sm mt-3'><i className="fa-regular fa-lightbulb"></i><strong> Tip: </strong>Align each listed skill with the exact wording in the job description and prioritize those repeated most frequently.</p>
               <div className='mt-4 grid grid-cols-1 md:grid-cols-3 gap-4'>
                 <div className='p-3 bg-white rounded shadow-sm'>
-                  <div className='text-sm font-medium'>Keywords Match</div>
+                  <div className='text-sm font-medium font-(family-name:--font-inter)'>Keywords Match</div>
                   <div className="text-sm mt-2 max-h-107 overflow-auto space-y-1">
                     {(report.keywords || []).map((kw, i) => (
                       <div key={i} className='my-4'>
@@ -427,28 +444,154 @@ function App() {
                 </div>
 
                 <div className='p-3 bg-white rounded shadow-sm'>
-                  <div className='text-sm font-medium'>Skills Analysis</div>
+                  <div className='text-sm font-medium font-(family-name:--font-inter)'>Skills Analysis</div>
                   <div className="text-sm mt-2 space-y-2">
                     <div>
                       <div className="font-medium text-orange-600">Partial:</div>
                       <ul className="list-disc pl-5">
-                        {(report.skills?.partial || []).map((s, i) => <li key={i}>{s}</li>)}
+                        {(report.hardSkills?.partial || []).map((s, i) => <li key={i}>{s}</li>)}
                       </ul>
                     </div>
                     <div>
-                      <div className="font-medium text-red-600">Missing:</div>
+                      <div className="font-medium text-red-600"> Missing:</div>
                       <ul className="list-disc pl-5">
-                        {(report.skills?.missing || []).map((s, i) => <li key={i}>{s}</li>)}
+                        {(report.hardSkills?.missing || []).map((s, i) => <li key={i}>{s}</li>)}
                       </ul>
                     </div>
                   </div>
                 </div>
 
                 <div className='p-3 bg-white rounded shadow-sm'>
-                  <div className='text-sm font-medium'>Recommendations</div>
+                  <div className='text-sm font-medium font-(family-name:--font-inter)'>Recommendations</div>
                   <ul className="text-sm mt-2 list-decimal pl-5">
                     {report.recommendations.length ? report.recommendations.map((s, i) => <li key={i}>{s}</li>) : <li className="text-xs text-slate-500">No specific recommendations.</li>}
                   </ul>
+                </div>
+              </div>
+
+              <div className='text-2xl font-medium mt-10 font-(family-name:--font-inter)'>Soft Skills</div>
+              <p className='mt-2'>Soft skills are transferable, personality-driven abilities—like communication and time management—that can be learned and apply across roles, and they have a moderate impact on your match score.</p>
+              <div className='mt-4 grid grid-cols-1 md:grid-cols-3 gap-4'>
+
+                {/* Soft Skills Match (similar to Hard Skills > Keywords Match) */}
+                <div className='p-3 bg-white rounded shadow-sm'>
+                  <div className='text-sm font-medium font-(family-name:--font-inter)'>Soft Skills Match</div>
+                  <div className="text-sm mt-2 max-h-107 overflow-auto space-y-1">
+                    {/* Matched */}
+                    {(report.softSkills?.matched || []).map((s, i) => (
+                      <div key={`ss-m-${i}`} className='my-3'>
+                        <span className='text-green-600 mr-2 rounded-4xl py-1 px-2 bg-(--secondary-color)'>✓</span> {s}
+                      </div>
+                    ))}
+                    {/* Partial */}
+                    {(report.softSkills?.partial || []).map((s, i) => (
+                      <div key={`ss-p-${i}`} className='my-3'>
+                        <span className='text-orange-500 mr-2 rounded-4xl py-1 px-2 bg-[#ffe9c2]'>~</span> {s}
+                      </div>
+                    ))}
+                    {/* Missing */}
+                    {(report.softSkills?.missing || []).map((s, i) => (
+                      <div key={`ss-x-${i}`} className='my-3'>
+                        <span className='text-red-600 mr-2 rounded-4xl py-1 px-2 bg-[#faa5a5]'>✗</span> {s}
+                      </div>
+                    ))}
+                    {(!report.softSkills || (
+                      !report.softSkills.matched?.length &&
+                      !report.softSkills.partial?.length &&
+                      !report.softSkills.missing?.length
+                    )) && (
+                        <div className='text-xs text-slate-500'>No soft skills extracted.</div>
+                      )}
+                  </div>
+                </div>
+
+                {/* Soft Skills Analysis (partial/missing lists) */}
+                <div className='p-3 bg-white rounded shadow-sm'>
+                  <div className='text-sm font-medium font-(family-name:--font-inter)'>Soft Skills Analysis</div>
+                  <div className="text-sm mt-2 space-y-2">
+                    <div>
+                      <div className="font-medium text-orange-600">Partial:</div>
+                      <ul className="list-disc pl-5">
+                        {(report.softSkills?.partial || []).map((s, i) => <li key={i}>{s}</li>)}
+                        {(!report.softSkills?.partial?.length) && <li className="text-xs text-slate-500">None</li>}
+                      </ul>
+                    </div>
+                    <div>
+                      <div className="font-medium text-red-600">Missing:</div>
+                      <ul className="list-disc pl-5">
+                        {(report.softSkills?.missing || []).map((s, i) => <li key={i}>{s}</li>)}
+                        {(!report.softSkills?.missing?.length) && <li className="text-xs text-slate-500">None</li>}
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Recommendations (reuse existing) */}
+                <div className='p-3 bg-white rounded shadow-sm'>
+                  <div className='text-sm font-medium font-(family-name:--font-inter)'>Recommendations</div>
+                  <ul className="text-sm mt-2 list-decimal pl-5">
+                    {report.recommendations.length ? report.recommendations.map((s, i) => <li key={i}>{s}</li>) : <li className="text-xs text-slate-500">No specific recommendations.</li>}
+                  </ul>
+                </div>
+              </div>
+
+              <div className='text-2xl font-medium mt-10 font-(family-name:--font-inter)'>Recruiter Tips</div>
+              <p className='mt-2'>Beyond ATS scans, recruiters assess alignment, measurable impact, resume length, and your online presence. Below is how your resume performs in those areas.</p>
+              <div className='p-3 bg-white rounded shadow-sm mt-3'>
+                <div className="text-sm flex flex-col mt-2 space-y-2">
+
+                  {/* Job Level Match */}
+                  <div className='grid grid-cols-[200px_1fr] gap-4 items-start border-b-2 border-b-gray-200 p-3'>
+                    <div className='font-medium text-md font-(family-name:--font-inter)'>Job Level Match</div>
+                    <ul className='list-none space-y-1'>
+                      <li>
+                        <span className={report.recruiterTips?.jobLevelMatch.match ? 'text-green-600 mr-2 rounded-4xl py-1 px-2 bg-(--secondary-color)' : 'text-red-600 mr-2 rounded-4xl py-1 px-2 bg-[#faa5a5]'}>
+                          {report.recruiterTips?.jobLevelMatch.match ? '✓' : '✗'}
+                        </span>
+                        {report.recruiterTips?.jobLevelMatch.message || 'Years of experience not detected.'}
+                      </li>
+                    </ul>
+                  </div>
+
+                  {/* Measurable Results */}
+                  <div className='grid grid-cols-[200px_1fr] gap-4 items-start border-b-2 border-b-gray-200 p-3'>
+                    <div className='font-medium text-md font-(family-name:--font-inter)'>Measurable Results</div>
+                    <ul className='list-none space-y-1'>
+                      <li>
+                        <span className={report.recruiterTips?.measurableResults.present ? 'text-green-600 mr-2 rounded-4xl py-1 px-2 bg-(--secondary-color)' : 'text-orange-600 mr-2 rounded-4xl py-1 px-2 bg-[#ffe9c2]'}>
+                          {report.recruiterTips?.measurableResults.present ? '✓' : '⚠'}
+                        </span>
+                        {report.recruiterTips?.measurableResults.message || 'Measurable results not detected.'}
+                      </li>
+                    </ul>
+                  </div>
+
+                  {/* Resume Tone / Word Count */}
+                  <div className='grid grid-cols-[200px_1fr] gap-4 items-start border-b-2 border-b-gray-200 p-3'>
+                    <div className='font-medium text-md font-(family-name:--font-inter)'>Resume Tone, Word Count</div>
+                    <ul className='list-none space-y-1'>
+                      <li>
+                        <span className={(report.recruiterTips?.wordCount.count || 0) <= (report.recruiterTips?.wordCount.limit || 1000) ? 'text-green-600 mr-2 rounded-4xl py-1 px-2 bg-(--secondary-color)' : 'text-orange-600 mr-2 rounded-4xl py-1 px-2 bg-[#ffe9c2]'}>
+                          {(report.recruiterTips?.wordCount.count || 0) <= (report.recruiterTips?.wordCount.limit || 1000) ? '✓' : '⚠'}
+                        </span>
+                        {report.recruiterTips?.wordCount.message || 'Word count not available.'}
+                      </li>
+                    </ul>
+                  </div>
+
+                  {/* Web Presence */}
+                  <div className='grid grid-cols-[200px_1fr] gap-4 items-start p-3'>
+                    <div className='font-medium text-md font-(family-name:--font-inter)'>Web Presence</div>
+                    <ul className='list-none space-y-1'>
+                      <li>
+                        <span className={report.recruiterTips?.webPresence.present ? 'text-green-600 mr-2 rounded-4xl py-1 px-2 bg-(--secondary-color)' : 'text-orange-600 mr-2 rounded-4xl py-1 px-2 bg-[#ffe9c2]'}>
+                          {report.recruiterTips?.webPresence.present ? '✓' : '⚠'}
+                        </span>
+                        {report.recruiterTips?.webPresence.message || 'Web presence not detected.'}
+                      </li>
+                    </ul>
+                  </div>
+
                 </div>
               </div>
             </div>
@@ -471,9 +614,4 @@ function App() {
     </div>
   );
 }
-
-//TODO: add a section for soft skills match
-//TODO: take out the experience chart and add a section with job level match and also to be a part of the overall score
-
-
 export default App;

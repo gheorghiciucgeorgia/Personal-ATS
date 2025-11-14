@@ -352,7 +352,7 @@ app.post('/analyze', upload.single('cv'), async (req, res) => {
         const cvScan = cvText
             .replace(/[\u200B-\u200D\uFEFF]/g, '')
             .replace(/\s*\|\s*/g, ' | ');
-        
+
         // Normalize JD before detecting education
         const jdScan = (jobDescription || '')
             .replace(/[\u200B-\u200D\uFEFF]/g, ' ')
@@ -360,7 +360,7 @@ app.post('/analyze', upload.single('cv'), async (req, res) => {
             .normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
             .replace(/[ \t]{2,}/g, ' ')
             .trim();
-        
+
         // Education match info (use normalized JD)
         const edu = educationMatchInfo(cvScan, jdScan);
 
@@ -433,10 +433,31 @@ app.post('/analyze', upload.single('cv'), async (req, res) => {
         const prompt = `You are an expert ATS analyzer. Return ONLY valid JSON:
 {
   "keywords": [{"term":"keyword1","matched":true}],
-  "skills": {"matched":[],"partial":[],"missing":[]},
+  "hardSkills": {"matched":[],"partial":[],"missing":[],"extras":[]},
+  "softSkills": {"matched":[],"partial":[],"missing":[]},
   "experienceScore": 75,
   "recommendations": ["..."]
 }
+
+Instructions:
+- "keywords": extract job-specific terms from JD; mark each as matched (true/false) if present in CV.
+- "hardSkills":
+  - Extract ALL technical/hard skills from BOTH JD and CV (e.g., React, TypeScript, Git, Webpack, Vite, Figma, GSAP, Tailwind CSS, GraphQL, RESTful APIs, CI/CD, Jest, Cypress, Redux, Zustand, etc.)
+  - Search for each skill case-insensitively, allowing variations (e.g., "front-end" matches "frontend", "REST APIs" matches "RESTful APIs")
+  - "matched": skills from JD that are present in CV (exact or very close match)
+  - "partial": skills from JD where CV mentions related/similar tech (e.g., JD asks "GraphQL", CV has "REST APIs")
+  - "missing": skills from JD that are completely absent in CV
+  - "extras": skills present in CV but NOT required by JD (e.g., Figma, Webpack, Vite if JD doesn't list them)
+- "softSkills": extract ONLY soft/interpersonal skills (e.g., Communication, Teamwork, Problem Solving, Leadership, Collaboration, Ownership) from JD; classify as matched/partial/missing in CV.
+- Do NOT include soft skills in hardSkills or vice versa.
+- "experienceScore": rate CV's overall experience relevance (0–100).
+- "recommendations": list actionable tips to improve match.
+
+IMPORTANT: Search thoroughly in the entire CV text (including SKILLS section and WORK EXPERIENCE bullets) for each skill. For example:
+- If JD mentions "React" and CV contains "React" anywhere → matched
+- If JD mentions "Vite" and CV contains "Vite" → matched
+- If JD mentions "Webpack" and CV contains "Webpack" → matched
+- If JD mentions "Figma" and CV contains "Figma" → matched (or extras if not in JD)
 
 Job Description:
 ${jobDescription}
@@ -459,32 +480,124 @@ ${cvText}`;
         const matchedKw = kw.filter(k => k.matched).length || 0;
         const keywordCoverage = totalKw ? Math.round((matchedKw / totalKw) * 100) : 0;
 
+        // Compute hard skill coverage (matched ratio)
+        const hardSkillsObj = analysis.hardSkills || { matched: [], partial: [], missing: [] };
+        const totalhardSkills =
+            (hardSkillsObj.matched?.length || 0) +
+            (hardSkillsObj.partial?.length || 0) +
+            (hardSkillsObj.missing?.length || 0);
+        const skillCoverage = totalhardSkills
+            ? Math.round((hardSkillsObj.matched.length / totalhardSkills) * 100)
+            : 0;
+
+        // Compute soft skill coverage (matched ratio)
+        const softSkillsObj = analysis.softSkills || { matched: [], partial: [], missing: [] };
+        const totalSoftSkills =
+            (softSkillsObj.matched?.length || 0) +
+            (softSkillsObj.partial?.length || 0) +
+            (softSkillsObj.missing?.length || 0);
+        const softSkillCoverage = totalSoftSkills
+            ? Math.round((softSkillsObj.matched.length / totalSoftSkills) * 100)
+            : 0;
+
         // Education score: weight only when JD specifies level; mild credit if present only in CV
         const eduScore = edu.presentInJD ? (edu.match ? 100 : 0) : (edu.presentInCV ? 60 : 0);
 
-        // Blend final score: embeddings + keywords + title + education
+        const extractYears = (text) => {
+            const m = text.match(/(\d+)\s*\+?\s*(years?|yrs?)\s*(of\s+experience)?/i);
+            return m ? parseInt(m[1], 10) : null;
+        };
+        const jdYears = extractYears(jobDescription);
+        const cvYears = extractYears(cvScan);
+        const jobLevelMatch = (jdYears !== null && cvYears !== null && cvYears >= jdYears);
+        const jobLevelMessage = jobLevelMatch
+            ? "Your years of experience align with the role's requirements. This is a positive start, but remember to carefully review all other job criteria to ensure you're a strong overall match before applying."
+            : "The years of experience does not align with the role requirement";
+
+        // 2) Measurable Results: check if CV has numbers/dates/percentages
+        const hasNumbers = /\b\d+%?\b/.test(cvScan);
+        const hasDates = /\b(19|20)\d{2}\b/.test(cvScan);
+        const measurableMessage = (hasNumbers && hasDates)
+            ? "Your resume includes specific numbers and dates, demonstrating measurable impact. Keep being concise and accurate."
+            : "Add more measurable results with dates, length of time, and accurate numbers to demonstrate impact.";
+
+        // 3) Resume Tone / Word Count
+        const wordCount = cvScan.split(/\s+/).filter(Boolean).length;
+        const wordCountMessage = wordCount < 1000
+            ? `There are ${wordCount} words in your resume, which is under the suggested 1000 word count for relevance and ease of reading reasons.`
+            : `Your resume has ${wordCount} words. Consider reducing it to under 1000 for better readability.`;
+
+        // 4) Web Presence: check if linkedin/github are present
+        const hasWebPresence = /linkedin\.com\/in\//i.test(cvScan) || /github\.com/i.test(cvScan);
+        const webPresenceMessage = hasWebPresence
+            ? "You included a LinkedIn or GitHub profile, which helps recruiters verify your online presence."
+            : "Consider adding a LinkedIn or GitHub profile link to strengthen your web presence.";
+
+        const recruiterTips = {
+            jobLevelMatch: { match: jobLevelMatch, message: jobLevelMessage },
+            measurableResults: { present: hasNumbers && hasDates, message: measurableMessage },
+            wordCount: { count: wordCount, message: wordCountMessage },
+            webPresence: { present: hasWebPresence, message: webPresenceMessage }
+        };
+        // ===== end recruiter tips =====
+
+        // Compute recruiter tips score components (0..100 each)
+        const jobLevelScore = recruiterTips.jobLevelMatch.match ? 100 : 0;
+        const measurableScore = recruiterTips.measurableResults.present ? 100 : 0;
+        const wordCountScore = (recruiterTips.wordCount.count < 1000) ? 100 : 50;
+        const webPresenceScore = recruiterTips.webPresence.present ? 100 : 50;
+
+        // Blend final score: hard skills high, soft skills medium, recruiter tips low
         const WEIGHTS = {
-            emb: 0.5,
-            keywords: 0.25,
-            title: 0.2,
-            edu: 0.05
+            hardSkillsKeywords: 0.32,    // high impact
+            hardSkillsCoverage: 0.20,    // high impact
+            soft: 0.18,                  // medium impact
+            emb: 0.12,
+            jobLevel: 0.06,              // low impact
+            measurable: 0.05,            // low impact
+            wordCount: 0.03,             // low impact
+            webPresence: 0.02,           // low impact
+            title: 0.01,
+            edu: 0.01
         };
         const titleScore = checks.jobTitleMatch ? 100 : 0;
 
         const matchScore = Math.round(
+            WEIGHTS.hardSkillsKeywords * keywordCoverage +
+            WEIGHTS.hardSkillsCoverage * skillCoverage +
+            WEIGHTS.soft * softSkillCoverage +
             WEIGHTS.emb * embeddingScore +
-            WEIGHTS.keywords * keywordCoverage +
+            WEIGHTS.jobLevel * jobLevelScore +
+            WEIGHTS.measurable * measurableScore +
+            WEIGHTS.wordCount * wordCountScore +
+            WEIGHTS.webPresence * webPresenceScore +
             WEIGHTS.title * titleScore +
             WEIGHTS.edu * eduScore
         );
 
+        console.log('Match score calculated:', {
+            matchScore,
+            hardSkillsKeywords: keywordCoverage,
+            hardSkillsCoverage: skillCoverage,
+            soft: softSkillCoverage,
+            emb: embeddingScore,
+            jobLevel: jobLevelScore,
+            measurable: measurableScore,
+            wordCount: wordCountScore,
+            webPresence: webPresenceScore,
+            title: titleScore,
+            edu: eduScore
+        });
+
         res.json({
             matchScore,
             keywords: analysis.keywords || [],
-            skills: analysis.skills || { matched: [], partial: [], missing: [] },
+            hardSkills: analysis.hardSkills || { matched: [], partial: [], missing: [] },
+            softSkills: analysis.softSkills || { matched: [], partial: [], missing: [] },
             experienceScore: analysis.experienceScore || 0,
             recommendations: analysis.recommendations || [],
             checks,
+            recruiterTips,
             cleanedCvText: cvText
         });
     } catch (err) {
