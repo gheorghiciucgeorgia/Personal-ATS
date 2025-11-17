@@ -50,6 +50,10 @@ interface AnalysisResult {
   recruiterTips?: RecruiterTips; // << add
 }
 
+const API_URL = process.env.NODE_ENV === 'production'
+  ? '/api/analyze'  // Vercel
+  : 'http://localhost:5000/analyze';  // Docker local
+
 function App() {
   const [cvText, setCvText] = useState<string>(() =>
     sessionStorage.getItem('cvText') || ''
@@ -151,7 +155,9 @@ function App() {
       }
       formData.append('jobDescription', jobDescription);
 
-      const { data } = await axios.post('http://localhost:5000/analyze', formData);
+      const { data } = await axios.post(API_URL, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
 
       if (data.cleanedCvText) {
         setCvText(normalizeForPrompt(data.cleanedCvText));
