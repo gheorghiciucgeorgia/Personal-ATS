@@ -327,18 +327,18 @@ function App() {
                   <button onClick={downloadReportPDF} className='px-3 py-2 bg-(--accent-color) rounded'>Download PDF</button>
                 </div>
               </div>
-              <div className='mt-6 text-sm text-slate-500'>
+              <div className='text-sm text-slate-500'>
                 <div><i className="fa-solid fa-circle-info mr-2"></i>If the score is above 75% is considered good.</div>
               </div>
 
               {/* Searchability / ATS Tips */}
-              <div className='text-xl md:text-2xl font-medium mt-5 md:mt-10 font-(family-name:--font-inter)'>Searchability / ATS Tips</div>
+              <div className='text-xl md:text-2xl font-medium mt-5 md:mt-6 font-(family-name:--font-inter)'>Searchability / ATS Tips</div>
               <p className="mt-2">An Applicant Tracking System (ATS) is software used by ~90% of employers and recruiters to search resumes and manage hiring. Below is an assessment of how your resume performs in ATS and recruiter searches.</p>
               <div className='p-3 bg-white rounded shadow-sm mt-3'>
                 <div className="text-sm flex flex-col mt-2 space-y-2">
 
                   {/* Contact info */}
-                  <div className='grid grid-cols-[160px_1fr] gap-4 items-start border-b-2 border-b-gray-200 p-3'>
+                  <div className='grid  grid-rows-[30px_1fr] md:grid-rows-none md:grid-cols-[160px_1fr] gap-4 items-start border-b-2 border-b-gray-200 p-3'>
                     <div className='font-medium text-md font-(family-name:--font-inter)'>Contact info</div>
                     <ul className='list-none space-y-1'>
                       <li className='mb-3'>
