@@ -338,7 +338,7 @@ function App() {
                 <div className="text-sm flex flex-col mt-2 space-y-2">
 
                   {/* Contact info */}
-                  <div className='grid grid-rows-[30px_1fr] md:grid-cols-[160px_1fr] gap-4 items-start border-b-2 border-b-gray-200 p-3'>
+                  <div className='grid grid-cols-[160px_1fr] gap-4 items-start border-b-2 border-b-gray-200 p-3'>
                     <div className='font-medium text-md font-(family-name:--font-inter)'>Contact info</div>
                     <ul className='list-none space-y-1'>
                       <li className='mb-3'>
@@ -357,7 +357,7 @@ function App() {
                   </div>
 
                   {/* Job title */}
-                  <div className='grid grid-rows-[30px_1fr] md:grid-cols-[160px_1fr] gap-4 items-start border-b-2 border-b-gray-200 p-3'>
+                  <div className='grid grid-cols-[160px_1fr] gap-4 items-start border-b-2 border-b-gray-200 p-3'>
                     <div className='font-medium text-md font-(family-name:--font-inter)'>Job title</div>
                     <ul className='list-none space-y-1'>
                       <li className='mb-3'>
@@ -367,7 +367,7 @@ function App() {
                   </div>
 
                   {/* Sections */}
-                  <div className='grid grid-rows-[30px_1fr] md:grid-cols-[160px_1fr] gap-4 items-start border-b-2 border-b-gray-200 p-3'>
+                  <div className='grid grid-cols-[160px_1fr] gap-4 items-start border-b-2 border-b-gray-200 p-3'>
                     <div className='font-medium text-md font-(family-name:--font-inter)'>Sections</div>
                     <ul className='list-none space-y-1'>
                       <li className='mb-3'>
@@ -390,7 +390,7 @@ function App() {
                   </div>
 
                   {/* Dates */}
-                  <div className='grid grid-rows-[30px_1fr] md:grid-cols-[160px_1fr] gap-4 items-start border-b-2 border-b-gray-200 p-3'>
+                  <div className='grid grid-cols-[160px_1fr] gap-4 items-start border-b-2 border-b-gray-200 p-3'>
                     <div className='font-medium text-md font-(family-name:--font-inter)'>Dates Format</div>
                     <ul className='list-none space-y-1'>
                       <li className='mb-3'>
@@ -405,7 +405,7 @@ function App() {
                   </div>
 
                   {/* Education match */}
-                  <div className='grid grid-rows-[30px_1fr] md:grid-cols-[160px_1fr] gap-4 items-start border-b-2 border-b-gray-200 p-3'>
+                  <div className='grid grid-cols-[160px_1fr] gap-4 items-start border-b-2 border-b-gray-200 p-3'>
                     <div className='font-medium text-md font-(family-name:--font-inter)'>Education match</div>
                     <ul className='list-none space-y-1'>
                       <li>
@@ -416,7 +416,7 @@ function App() {
                   </div>
 
                   {/* File */}
-                  <div className='grid grid-rows-[30px_1fr] md:grid-cols-[160px_1fr] gap-4 items-start p-3'>
+                  <div className='grid grid-cols-[160px_1fr] gap-4 items-start p-3'>
                     <div className='font-medium text-md font-(family-name:--font-inter)'>File Type</div>
                     <ul className='list-none space-y-1'>
                       <li className='mb-3'>
@@ -547,7 +547,7 @@ function App() {
                 <div className="text-sm flex flex-col mt-2 space-y-2">
 
                   {/* Job Level Match */}
-                  <div className='grid grid-rows-[34px_1fr] gap-0 md:grid-cols-[200px_1fr] md:gap-11 lg:gap-4 items-start border-b-2 border-b-gray-200 p-3'>
+                  <div className='grid grid-cols-[200px_1fr] gap-4 items-start border-b-2 border-b-gray-200 p-3'>
                     <div className='font-medium text-md font-(family-name:--font-inter)'>Job Level Match</div>
                     <ul className='list-none space-y-1'>
                       <li>
@@ -560,7 +560,7 @@ function App() {
                   </div>
 
                   {/* Measurable Results */}
-                  <div className='grid grid-rows-[34px_1fr] gap-0 md:grid-cols-[200px_1fr] items-start border-b-2 border-b-gray-200 p-3'>
+                  <div className='grid grid-cols-[200px_1fr] gap-4 items-start border-b-2 border-b-gray-200 p-3'>
                     <div className='font-medium text-md font-(family-name:--font-inter)'>Measurable Results</div>
                     <ul className='list-none space-y-1'>
                       <li>
@@ -573,7 +573,7 @@ function App() {
                   </div>
 
                   {/* Resume Tone / Word Count */}
-                  <div className='grid grid-rows-[34px_1fr] gap-0 md:grid-cols-[200px_1fr] items-start border-b-2 border-b-gray-200 p-3'>
+                  <div className='grid grid-cols-[200px_1fr] gap-4 items-start border-b-2 border-b-gray-200 p-3'>
                     <div className='font-medium text-md font-(family-name:--font-inter)'>Resume Tone, Word Count</div>
                     <ul className='list-none space-y-1'>
                       <li>
@@ -586,7 +586,7 @@ function App() {
                   </div>
 
                   {/* Web Presence */}
-                  <div className='grid grid-rows-[34px_1fr] gap-0 md:grid-cols-[200px_1fr] items-start p-3'>
+                  <div className='grid grid-cols-[200px_1fr] gap-4 items-start p-3'>
                     <div className='font-medium text-md font-(family-name:--font-inter)'>Web Presence</div>
                     <ul className='list-none space-y-1'>
                       <li>
