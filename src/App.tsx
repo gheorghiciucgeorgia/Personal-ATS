@@ -269,7 +269,7 @@ function App() {
 
   return (
     <div className="bg-(--light-color) min-h-screen pt-6">
-      <div className='max-w-7xl mx-auto bg-white rounded-2xl shadow p-6'>
+      <div className='max-w-6xl mx-auto bg-white rounded-2xl shadow p-6'>
         <div className='flex flex-row justify-center items-center'>
           <div className='w-[50%] mr-5'>
             <h1 className='font-(family-name:--font-title) text-4xl font-semibold text-[#13292d] text-center'>ATS PERSONAL</h1>
