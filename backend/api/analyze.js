@@ -1,26 +1,22 @@
-const express = require('express');
-const cors = require('cors');
-const OpenAI = require('openai');
 const multer = require('multer');
 const mammoth = require('mammoth');
 const pdfParse = require('pdf-parse');
+const OpenAI = require('openai');
 
-// Rebuild PDF text order and fix orphan ALL-CAPS tokens (e.g., EXPERIENCE)
+// === PASTE ALL HELPERS FROM server.js HERE ===
+// (pdfPageRender, extractText, normalizeForPrompt, inferFileType, detectEducationLevel, educationMatchInfo)
+
 async function pdfPageRender(pageData) {
     const textContent = await pageData.getTextContent({ normalizeWhitespace: true });
-
     const items = textContent.items.map(it => ({
         str: it.str,
         x: Array.isArray(it.transform) ? it.transform[4] : 0,
         y: Array.isArray(it.transform) ? it.transform[5] : 0
     }));
-
-    // Keep original order; only group by Y tolerance
     const lineTol = 2.5;
     const lines = [];
     let current = [];
     let lastY = null;
-
     for (const it of items) {
         if (lastY === null || Math.abs(it.y - lastY) <= lineTol) {
             current.push(it.str);
@@ -31,20 +27,14 @@ async function pdfPageRender(pageData) {
         lastY = it.y;
     }
     if (current.length) lines.push(current.join(' '));
-
-    // Clean joins (hyphen breaks, extra spaces/punct)
     let text = lines.map(l => l.replace(/[ \t]{2,}/g, ' ').trim()).join('\n');
     text = text.replace(/([A-Za-z])-\s*\n\s*([A-Za-z])/g, '$1$2');
-
     const clean = s => (s || '').replace(/[\u200B-\u200D\uFEFF]/g, '').replace(/\s+/g, ' ').trim();
     const prevEnds = s => /[.!?:;)\]]\s*$/.test((s || '').trim());
     const startsLowerOrPunct = s => /^\s*([a-z]|[.,;:)\]-])/.test(s || '');
     const upperEq = (s, t) => clean(s).toUpperCase() === t;
     const isUpperOnly = s => /^[A-Z][A-Z\s\-&/]*$/.test(clean(s));
-
     let raw = text.split('\n');
-
-    // Merge "WORK" + "EXPERIENCE" into one heading (handles optional blank between)
     for (let i = 0; i < raw.length - 1; i++) {
         const l0 = clean(raw[i]);
         const l1 = clean(raw[i + 1] || '');
@@ -56,43 +46,31 @@ async function pdfPageRender(pageData) {
             raw[i + 2] = '';
         }
     }
-
-    // Aggressive fix for orphan ALL-CAPS tokens "EXPERIENCE" / "PROFILE"
     const TOKENS = new Set(['EXPERIENCE', 'PROFILE']);
     const findPrevIdx = (i) => { for (let k = i - 1; k >= 0; k--) if (clean(raw[k])) return k; return -1; };
     const findNextIdx = (i) => { for (let k = i + 1; k < raw.length; k++) if (clean(raw[k])) return k; return -1; };
-
     for (let i = 0; i < raw.length; i++) {
         const curTrim = clean(raw[i]);
         if (!curTrim || !isUpperOnly(curTrim)) continue;
-
-        // skip the already-merged "WORK EXPERIENCE"
         if (curTrim === 'WORK EXPERIENCE') continue;
-
         if (TOKENS.has(curTrim)) {
             const p = findPrevIdx(i);
             const n = findNextIdx(i);
             const prev = p >= 0 ? raw[p] : '';
             const next = n >= 0 ? raw[n] : '';
-
-            // Case 1: mid-sentence -> append lowercased to previous
             if (p >= 0 && n >= 0 && !prevEnds(prev) && startsLowerOrPunct(next)) {
                 raw[p] = (clean(prev) + ' ' + curTrim.toLowerCase()).replace(/\s{2,}/g, ' ');
                 raw[i] = '';
                 continue;
             }
-            // Case 2: between finished sentence and lowercase continuation -> prepend to next
             if (n >= 0 && startsLowerOrPunct(next)) {
                 raw[n] = (curTrim.toLowerCase() + ' ' + clean(next)).replace(/\s{2,}/g, ' ');
                 raw[i] = '';
                 continue;
             }
-            // Otherwise drop the stray token
             raw[i] = '';
         }
     }
-
-    // Soft-join: join lines that start lowercase/punct after a non-ending previous line
     {
         const out2 = [];
         for (let i = 0; i < raw.length; i++) {
@@ -108,32 +86,15 @@ async function pdfPageRender(pageData) {
         }
         raw = out2;
     }
-
     return raw.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
-const app = express();
-
-const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-    baseURL: process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1'
-});
-
-app.use(express.json({ limit: '10mb' }));
-app.use(cors({ origin: 'http://localhost:3000' }));
-
-const upload = multer({ storage: multer.memoryStorage() });
-
-app.get('/health', (req, res) => res.json({ status: 'ok' }));
-
-// Helper: extract text from buffer
 async function extractText(buffer, mimetype) {
     if (mimetype === 'application/pdf') {
         try {
             const data = await pdfParse(buffer, { pagerender: pdfPageRender });
             return data.text;
         } catch (e) {
-            // Fallback to default if custom render fails
             const data = await pdfParse(buffer);
             return data.text;
         }
@@ -148,21 +109,16 @@ async function extractText(buffer, mimetype) {
 
 function normalizeForPrompt(text = '') {
     let t = text;
-
-    // Basic cleanup
     t = t.replace(/\r\n?/g, '\n');
-    t = t.replace(/([A-Za-z])-\s*\n\s*([A-Za-z])/g, '$1$2'); // join hyphen-breaks
+    t = t.replace(/([A-Za-z])-\s*\n\s*([A-Za-z])/g, '$1$2');
     t = t.replace(/\s*\|\s*/g, ' | ');
     t = t.replace(/\s*,\s*/g, ', ').replace(/\s*;\s*/g, '; ').replace(/\s*:\s*/g, ': ');
     t = t.replace(/\s*\(\s*/g, ' (').replace(/\s*\)\s*/g, ') ');
-    t = t.replace(/([A-Za-z0-9])\s*-\s*([A-Za-z0-9])/g, '$1-$2'); // Front - End -> Front-End
+    t = t.replace(/([A-Za-z0-9])\s*-\s*([A-Za-z0-9])/g, '$1-$2');
     t = t.replace(/^[ \t]*[•▪◦∙·]\s*/gm, '- ');
     t = t.replace(/[ \t]{2,}/g, ' ');
     t = t.replace(/(\b(19|20)\d{2})\s*[-–]\s*(present|\b(19|20)\d{2})/gi, '$1 – $3');
-
     let lines = t.split('\n').map(l => l.trimEnd());
-
-    // 1) Ensure blank line after contact block (the line with email/phone/linkedin)
     const emailRe = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
     const phoneRe = /(\+?\d{1,3}[\s.-]?)?(\(?\d{2,4}\)?[\s.-]?)?[\d\s.-]{6,}/;
     const linkRe = /linkedin\.com\/in\//i;
@@ -172,39 +128,26 @@ function normalizeForPrompt(text = '') {
             lines.splice(contactIdx + 1, 0, '');
         }
     }
-
-    // 2) Fix city spacing: "I as i" -> "Iasi" (common PDF glitch)
     lines = lines.map(l =>
         l.replace(/\bI\s*as\s*i\b/gi, 'Iasi').replace(/\bI\s*a\s*s\s*i\b/gi, 'Iasi')
     );
-
-    // 3) Headings spacing
     const isHeading = (s) => {
         const u = (s || '').trim().toUpperCase();
         return ['SUMMARY', 'SKILLS', 'WORK EXPERIENCE', 'EDUCATION', 'CERTIFICATIONS'].includes(u);
     };
-    const HEADING_BLANK_AFTER = new Set(['SUMMARY', 'WORK EXPERIENCE', 'EDUCATION', 'CERTIFICATIONS']); // one blank line after
-    const HEADING_NO_BLANK_AFTER = new Set(['SKILLS']); // no blank line after
-
+    const HEADING_BLANK_AFTER = new Set(['SUMMARY', 'WORK EXPERIENCE', 'EDUCATION', 'CERTIFICATIONS']);
+    const HEADING_NO_BLANK_AFTER = new Set(['SKILLS']);
     for (let i = 0; i < lines.length; i++) {
         const u = (lines[i] || '').trim().toUpperCase();
         if (!isHeading(lines[i])) continue;
-
-        // remove extra blank lines immediately after heading
         let j = i + 1;
         while (j < lines.length && lines[j] === '') j++;
-        // Apply rule
         if (HEADING_BLANK_AFTER.has(u)) {
-            // ensure exactly one blank line after heading
             if (lines[i + 1] !== '') lines.splice(i + 1, 0, '');
-            // if more than one existed, we removed them via the while loop; reinsert the rest of content
         } else if (HEADING_NO_BLANK_AFTER.has(u)) {
-            // ensure NO blank line after heading
             if (lines[i + 1] === '') lines.splice(i + 1, 1);
         }
     }
-
-    // 4) In WORK EXPERIENCE section: split "Company, City-Delivered ..." into two lines and normalize bullets
     const workIdx = lines.findIndex(l => (l || '').trim().toUpperCase() === 'WORK EXPERIENCE');
     let nextSectionIdx = -1;
     if (workIdx >= 0) {
@@ -212,13 +155,9 @@ function normalizeForPrompt(text = '') {
             if (isHeading(lines[k])) { nextSectionIdx = k; break; }
         }
         if (nextSectionIdx < 0) nextSectionIdx = lines.length;
-
         const processed = [];
         for (let k = workIdx + 1; k < nextSectionIdx; k++) {
             let line = lines[k];
-
-            // Split once at hyphen following a comma pattern: "Company, City-Text..."
-            // This avoids splitting hyphenated words like "GSAP-animated".
             const m = line.match(/^(.+?,\s*[A-Za-zÀ-ÖØ-öø-ÿ .'-]+?)\s*-\s*(.+)$/);
             if (m) {
                 processed.push(m[1].trim());
@@ -227,38 +166,29 @@ function normalizeForPrompt(text = '') {
                 processed.push(line);
             }
         }
-
-        // Normalize bullet prefix "- " and keep each bullet on its own line
         for (let i = 0; i < processed.length; i++) {
             processed[i] = processed[i]
-                .replace(/^\s*-\s*/, '- ') // ensure single space after hyphen
+                .replace(/^\s*-\s*/, '- ')
                 .replace(/^\s*•\s*/, '- ')
                 .replace(/^\s*▪\s*/, '- ')
                 .replace(/^\s*·\s*/, '- ');
         }
-
-        // Write back
         lines.splice(workIdx + 1, nextSectionIdx - (workIdx + 1), ...processed);
     }
-
-    // 5) Collapse multiple blank lines to exactly one
     const out = [];
     for (let i = 0; i < lines.length; i++) {
         const cur = lines[i];
         if (cur === '' && out.length && out[out.length - 1] === '') continue;
         out.push(cur);
     }
-
     t = out.join('\n');
     return t.trim();
 }
 
-// Best-effort file type inference
 function inferFileType(file, buffer) {
     const name = (file?.originalname || '').toLowerCase();
     const mm = file?.mimetype || '';
     const isPDFMagic = buffer && buffer.slice(0, 5).toString() === '%PDF-';
-
     if (mm) return mm;
     if (isPDFMagic || name.endsWith('.pdf')) return 'application/pdf';
     if (name.endsWith('.docx')) return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
@@ -266,50 +196,35 @@ function inferFileType(file, buffer) {
     return 'application/octet-stream';
 }
 
-// Education detection helpers (exclude short tokens; support curly quotes and diacritics)
 const EDU_LEVELS = [
-    // PhD / Doctorate
     { key: 'phd', rank: 5, rx: /\b(ph\.?\s*d\.?|phd|doctorate|doctoral|doctor of philosophy)\b/i },
-
-    // Master's (no plain "ms"/"ma")
-    { key: 'master', rank: 4, rx: /\b(master[’']?s|masterat)\b|\b(m\.?\s*sc\.?|msc|mba|m\.?\s*eng\.?|meng)\b/i },
-
-    // Bachelor's (no plain "bs"/"ba")
-    { key: 'bachelor', rank: 3, rx: /\b(bachelor[’']?s|licen[țt]a|licen[țt]ă)\b|\b(b\.?\s*sc\.?|bsc|beng|b\.?\s*eng\.?|btech|b\.?\s*tech\.?)\b/i },
-
-    // Associate (no plain "as")
-    { key: 'associate', rank: 2, rx: /\b(associate[’']?s(?:\s+degree)?)\b|\b(a\.?\s*a\.?\s*s\.?)\b/i },
-
-    // High school
+    { key: 'master', rank: 4, rx: /\b(master['']?s|masterat)\b|\b(m\.?\s*sc\.?|msc|mba|m\.?\s*eng\.?|meng)\b/i },
+    { key: 'bachelor', rank: 3, rx: /\b(bachelor['']?s|licen[țt]a|licen[țt]ă)\b|\b(b\.?\s*sc\.?|bsc|beng|b\.?\s*eng\.?|btech|b\.?\s*tech\.?)\b/i },
+    { key: 'associate', rank: 2, rx: /\b(associate['']?s(?:\s+degree)?)\b|\b(a\.?\s*a\.?\s*s\.?)\b/i },
     { key: 'highschool', rank: 1, rx: /\b(high\s*school|secondary\s+school|liceu|lyceum)\b/i }
 ];
 
 function detectEducationLevel(text = '') {
-    // normalize: remove zero-width, unify curly -> straight apostrophes, strip diacritics
     const s = (text || '')
         .replace(/[\u200B-\u200D\uFEFF]/g, ' ')
         .replace(/[\u2018\u2019\u201A\u201B]/g, "'")
         .normalize('NFKD').replace(/[\u0300-\u036f]/g, '');
-
     let best = null;
     for (const lvl of EDU_LEVELS) {
         if (lvl.rx.test(s)) {
             if (!best || lvl.rank > best.rank) best = lvl;
         }
     }
-    return best; // may be null
+    return best;
 }
 
 function educationMatchInfo(cvText, jdText) {
     const cvLvl = detectEducationLevel(cvText);
     const jdLvl = detectEducationLevel(jdText);
-
     const presentInCV = !!cvLvl;
     const presentInJD = !!jdLvl;
-
     let match = false;
     let message = '';
-
     if (!presentInJD && presentInCV) {
         match = true;
         message = 'The job description does not list required or preferred education, but your education is noted.';
@@ -317,7 +232,7 @@ function educationMatchInfo(cvText, jdText) {
         match = false;
         message = 'The degree is not an match to the job description.';
     } else if (presentInJD && presentInCV) {
-        match = cvLvl.rank === jdLvl.rank; // exact level match only
+        match = cvLvl.rank === jdLvl.rank;
         message = match
             ? "The Degree is an exact match to the job description's requirement"
             : 'The degree is not an match to the job description.';
@@ -325,7 +240,6 @@ function educationMatchInfo(cvText, jdText) {
         match = false;
         message = 'Education not detected in CV or Job Description';
     }
-
     return {
         presentInCV,
         presentInJD,
@@ -336,24 +250,40 @@ function educationMatchInfo(cvText, jdText) {
     };
 }
 
-app.post('/analyze', upload.single('cv'), async (req, res) => {
+// === END HELPERS ===
+
+const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+    baseURL: process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1'
+});
+
+const upload = multer({ storage: multer.memoryStorage() });
+
+// Serverless handler
+module.exports = async (req, res) => {
+    // CORS
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    if (req.method === 'OPTIONS') return res.status(200).end();
+    if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+
     try {
-        console.log('=== ANALYZE REQUEST ===');
-        console.log('File:', req.file ? req.file.originalname : 'NO FILE');
-        console.log('Mimetype:', req.file?.mimetype);
-        console.log('Job Description length:', req.body.jobDescription?.length || 0);
+        // Parse multipart form
+        await new Promise((resolve, reject) => {
+            upload.single('cv')(req, res, (err) => (err ? reject(err) : resolve()));
+        });
+
+        if (!req.file) return res.status(400).json({ error: 'No CV file uploaded' });
 
         const cvTextRaw = await extractText(req.file.buffer, inferFileType(req.file, req.file.buffer));
         const cvText = normalizeForPrompt(cvTextRaw);
-
         const { jobDescription } = req.body;
 
-        // Make a scan-safe copy for regex (strip zero-width, collapse spaces around pipes)
         const cvScan = cvText
             .replace(/[\u200B-\u200D\uFEFF]/g, '')
             .replace(/\s*\|\s*/g, ' | ');
 
-        // Normalize JD before detecting education
         const jdScan = (jobDescription || '')
             .replace(/[\u200B-\u200D\uFEFF]/g, ' ')
             .replace(/[\u2018\u2019\u201A\u201B]/g, "'")
@@ -361,10 +291,8 @@ app.post('/analyze', upload.single('cv'), async (req, res) => {
             .replace(/[ \t]{2,}/g, ' ')
             .trim();
 
-        // Education match info (use normalized JD)
         const edu = educationMatchInfo(cvScan, jdScan);
 
-        // ===== Searchability / ATS Tips checks =====
         const hasEmail = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(cvScan);
         const hasPhone = /(\+?\d{1,3}[\s.-]?)?(\(?\d{2,4}\)?[\s.-]?)?[\d\s.-]{6,}/.test(cvScan);
         const hasLinkedIn = /linkedin\.com\/in\//i.test(cvScan);
@@ -372,7 +300,6 @@ app.post('/analyze', upload.single('cv'), async (req, res) => {
         const jdFirstLine = (jobDescription.split('\n')[0] || '').toLowerCase().trim();
         const jdTitleTokens = jdFirstLine.replace(/[^a-z\s]/g, ' ').split(/\s+/).filter(Boolean);
         const cvLower = cvScan.toLowerCase();
-
         const feSyn = ['frontend', 'front-end', 'front end'];
         const hasFETitle = feSyn.some(s => cvLower.includes(s));
         const matchedTokenCount = jdTitleTokens.filter(t => t.length > 2 && cvLower.includes(t)).length;
@@ -399,8 +326,6 @@ app.post('/analyze', upload.single('cv'), async (req, res) => {
         ]);
         const fileAllowed = allowedTypes.has(fileType);
 
-        // Education match already computed above using normalized JD
-
         const checks = {
             contact: { email: hasEmail, phone: hasPhone, linkedin: hasLinkedIn },
             jobTitleMatch,
@@ -415,9 +340,7 @@ app.post('/analyze', upload.single('cv'), async (req, res) => {
             file: { type: fileType || 'unknown', allowed: fileAllowed },
             educationMatch: edu
         };
-        // ===== end checks =====
 
-        // Embeddings on cleaned text
         const embeddingResp = await openai.embeddings.create({
             model: 'text-embedding-3-small',
             input: [cvText, jobDescription]
@@ -453,14 +376,10 @@ Instructions:
 - "experienceScore": rate CV's overall experience relevance (0–100).
 - "recommendations": list actionable tips to improve match.
 
-IMPORTANT: Search thoroughly in the entire CV text (including SKILLS section and WORK EXPERIENCE bullets) for each skill. For example:
-- If JD mentions "React" and CV contains "React" anywhere → matched
-- If JD mentions "Vite" and CV contains "Vite" → matched
-- If JD mentions "Webpack" and CV contains "Webpack" → matched
-- If JD mentions "Figma" and CV contains "Figma" → matched (or extras if not in JD)
+IMPORTANT: Search thoroughly in the entire CV text (including SKILLS section and WORK EXPERIENCE bullets) for each skill.
 
 Job Description:
-${jobDescription}
+${jdScan}
 
 CV (clean):
 ${cvText}`;
@@ -474,14 +393,12 @@ ${cvText}`;
 
         const analysis = JSON.parse(completion.choices[0].message.content);
 
-        // Compute keyword coverage (0..100)
         const kw = Array.isArray(analysis.keywords) ? analysis.keywords : [];
         const totalKw = kw.length || 0;
         const matchedKw = kw.filter(k => k.matched).length || 0;
         const keywordCoverage = totalKw ? Math.round((matchedKw / totalKw) * 100) : 0;
 
-        // Compute hard skill coverage (matched ratio)
-        const hardSkillsObj = analysis.hardSkills || { matched: [], partial: [], missing: [] };
+        const hardSkillsObj = analysis.hardSkills || { matched: [], partial: [], missing: [], extras: [] };
         const totalhardSkills =
             (hardSkillsObj.matched?.length || 0) +
             (hardSkillsObj.partial?.length || 0) +
@@ -490,7 +407,6 @@ ${cvText}`;
             ? Math.round((hardSkillsObj.matched.length / totalhardSkills) * 100)
             : 0;
 
-        // Compute soft skill coverage (matched ratio)
         const softSkillsObj = analysis.softSkills || { matched: [], partial: [], missing: [] };
         const totalSoftSkills =
             (softSkillsObj.matched?.length || 0) +
@@ -500,7 +416,6 @@ ${cvText}`;
             ? Math.round((softSkillsObj.matched.length / totalSoftSkills) * 100)
             : 0;
 
-        // Education score: weight only when JD specifies level; mild credit if present only in CV
         const eduScore = edu.presentInJD ? (edu.match ? 100 : 0) : (edu.presentInCV ? 60 : 0);
 
         const extractYears = (text) => {
@@ -514,20 +429,17 @@ ${cvText}`;
             ? "Your years of experience align with the role's requirements. This is a positive start, but remember to carefully review all other job criteria to ensure you're a strong overall match before applying."
             : "The years of experience does not align with the role requirement";
 
-        // 2) Measurable Results: check if CV has numbers/dates/percentages
         const hasNumbers = /\b\d+%?\b/.test(cvScan);
         const hasDates = /\b(19|20)\d{2}\b/.test(cvScan);
         const measurableMessage = (hasNumbers && hasDates)
             ? "Your resume includes specific numbers and dates, demonstrating measurable impact. Keep being concise and accurate."
             : "Add more measurable results with dates, length of time, and accurate numbers to demonstrate impact.";
 
-        // 3) Resume Tone / Word Count
         const wordCount = cvScan.split(/\s+/).filter(Boolean).length;
         const wordCountMessage = wordCount < 1000
             ? `There are ${wordCount} words in your resume, which is under the suggested 1000 word count for relevance and ease of reading reasons.`
             : `Your resume has ${wordCount} words. Consider reducing it to under 1000 for better readability.`;
 
-        // 4) Web Presence: check if linkedin/github are present
         const hasWebPresence = /linkedin\.com\/in\//i.test(cvScan) || /github\.com/i.test(cvScan);
         const webPresenceMessage = hasWebPresence
             ? "You included a LinkedIn or GitHub profile, which helps recruiters verify your online presence."
@@ -539,24 +451,21 @@ ${cvText}`;
             wordCount: { count: wordCount, message: wordCountMessage },
             webPresence: { present: hasWebPresence, message: webPresenceMessage }
         };
-        // ===== end recruiter tips =====
 
-        // Compute recruiter tips score components (0..100 each)
         const jobLevelScore = recruiterTips.jobLevelMatch.match ? 100 : 0;
         const measurableScore = recruiterTips.measurableResults.present ? 100 : 0;
         const wordCountScore = (recruiterTips.wordCount.count < 1000) ? 100 : 50;
         const webPresenceScore = recruiterTips.webPresence.present ? 100 : 50;
 
-        // Blend final score: hard skills high, soft skills medium, recruiter tips low
         const WEIGHTS = {
-            hardSkillsKeywords: 0.32,    // high impact
-            hardSkillsCoverage: 0.20,    // high impact
-            soft: 0.18,                  // medium impact
+            hardSkillsKeywords: 0.32,
+            hardSkillsCoverage: 0.20,
+            soft: 0.18,
             emb: 0.12,
-            jobLevel: 0.06,              // low impact
-            measurable: 0.05,            // low impact
-            wordCount: 0.03,             // low impact
-            webPresence: 0.02,           // low impact
+            jobLevel: 0.06,
+            measurable: 0.05,
+            wordCount: 0.03,
+            webPresence: 0.02,
             title: 0.01,
             edu: 0.01
         };
@@ -575,24 +484,10 @@ ${cvText}`;
             WEIGHTS.edu * eduScore
         );
 
-        console.log('Match score calculated:', {
-            matchScore,
-            hardSkillsKeywords: keywordCoverage,
-            hardSkillsCoverage: skillCoverage,
-            soft: softSkillCoverage,
-            emb: embeddingScore,
-            jobLevel: jobLevelScore,
-            measurable: measurableScore,
-            wordCount: wordCountScore,
-            webPresence: webPresenceScore,
-            title: titleScore,
-            edu: eduScore
-        });
-
-        res.json({
+        res.status(200).json({
             matchScore,
             keywords: analysis.keywords || [],
-            hardSkills: analysis.hardSkills || { matched: [], partial: [], missing: [] },
+            hardSkills: analysis.hardSkills || { matched: [], partial: [], missing: [], extras: [] },
             softSkills: analysis.softSkills || { matched: [], partial: [], missing: [] },
             experienceScore: analysis.experienceScore || 0,
             recommendations: analysis.recommendations || [],
@@ -601,11 +496,7 @@ ${cvText}`;
             cleanedCvText: cvText
         });
     } catch (err) {
-        console.error('=== ERROR IN ANALYZE ===');
-        console.error(err);
-        res.status(500).json({ error: String(err.message || err) });
+        console.error('Error analyzing CV:', err);
+        res.status(500).json({ error: 'Failed to analyze CV', details: err.message });
     }
-});
-
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, '0.0.0.0', () => console.log(`Backend running on ${PORT}`));
+};
