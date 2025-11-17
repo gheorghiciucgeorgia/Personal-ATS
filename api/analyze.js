@@ -474,13 +474,12 @@ module.exports = async function handler(req, res) {
 Instructions:
 - "keywords": extract job-specific terms from JD; mark each as matched (true/false) if present in CV.
 - "hardSkills":
-  - Extract ALL technical/hard skills from BOTH JD and CV (e.g., React, TypeScript, Git, Webpack, Vite, Figma, GSAP, Tailwind CSS, GraphQL, RESTful APIs, CI/CD, Jest, Cypress, Redux, Zustand, etc.)
+  - Extract ALL technical/hard skills from BOTH JD and CV
   - Search for each skill case-insensitively, allowing variations (e.g., "front-end" matches "frontend", "REST APIs" matches "RESTful APIs")
   - "matched": skills from JD that are present in CV (exact or very close match)
-  - "partial": skills from JD where CV mentions related/similar tech (e.g., JD asks "GraphQL", CV has "REST APIs")
+  - "partial": skills from JD where CV mentions related/similar tech
   - "missing": skills from JD that are completely absent in CV
-  - "extras": skills present in CV but NOT required by JD (e.g., Figma, Webpack, Vite if JD doesn't list them)
-- "softSkills": extract ONLY soft/interpersonal skills (e.g., Communication, Teamwork, Problem Solving, Leadership, Collaboration, Ownership) from JD; classify as matched/partial/missing in CV.
+- "softSkills": extract ONLY soft/interpersonal skills from JD; classify as matched/partial/missing in CV.
 - Do NOT include soft skills in hardSkills or vice versa.
 - "experienceScore": rate CV's overall experience relevance (0–100).
 - "recommendations": list actionable tips to improve match.
