@@ -1,10 +1,11 @@
 // api/analyze.js
-const multer = require('multer');
+const formidable = require('formidable');
 const mammoth = require('mammoth');
 const pdfParse = require('pdf-parse');
 const OpenAI = require('openai');
+const fs = require('fs').promises;
 
-// ===== PĂSTREAZĂ TOATE HELPER FUNCTIONS =====
+// ===== PĂSTREAZĂ TOATE HELPER FUNCTIONS (copiază din fișierul tău) =====
 async function pdfPageRender(pageData) {
     const textContent = await pageData.getTextContent({ normalizeWhitespace: true });
 
@@ -14,7 +15,6 @@ async function pdfPageRender(pageData) {
         y: Array.isArray(it.transform) ? it.transform[5] : 0
     }));
 
-    // Keep original order; only group by Y tolerance
     const lineTol = 2.5;
     const lines = [];
     let current = [];
@@ -139,7 +139,7 @@ function normalizeForPrompt(text = '') {
     t = t.replace(/\s*\|\s*/g, ' | ');
     t = t.replace(/\s*,\s*/g, ', ').replace(/\s*;\s*/g, '; ').replace(/\s*:\s*/g, ': ');
     t = t.replace(/\s*\(\s*/g, ' (').replace(/\s*\)\s*/g, ') ');
-    t = t.replace(/([A-Za-z0-9])\s*-\s*([A-Za-z0-9])/g, '$1-$2'); // Front - End -> Front-End
+    t = t.replace(/([A-Za-z0-9])\s*-\s*([A-ZaZ0-9])/g, '$1-$2'); // Front - End -> Front-End
     t = t.replace(/^[ \t]*[•▪◦∙·]\s*/gm, '- ');
     t = t.replace(/[ \t]{2,}/g, ' ');
     t = t.replace(/(\b(19|20)\d{2})\s*[-–]\s*(present|\b(19|20)\d{2})/gi, '$1 – $3');
@@ -238,7 +238,7 @@ function normalizeForPrompt(text = '') {
 }
 
 function inferFileType(file, buffer) {
-    const name = (file?.originalname || '').toLowerCase();
+    const name = (file?.originalFilename || file?.originalname || '').toLowerCase();
     const mm = file?.mimetype || '';
     const isPDFMagic = buffer && buffer.slice(0, 5).toString() === '%PDF-';
 
@@ -324,20 +324,7 @@ const openai = new OpenAI({
     baseURL: process.env.OPENAI_BASE_URL || 'https://openrouter.ai/api/v1'
 });
 
-const upload = multer({
-    storage: multer.memoryStorage(),
-    limits: { fileSize: 10 * 1024 * 1024 }
-});
-
-// ❌ ȘTERGE TOATE LINIILE CU EXPRESS:
-// const app = express();
-// app.use(express.json(...));
-// app.use(cors(...));
-// app.get('/health', ...);
-// app.post('/analyze', ...);
-// app.listen(...);
-
-// ✅ PĂSTREAZĂ DOAR SERVERLESS HANDLER:
+// ===== SERVERLESS HANDLER =====
 module.exports = async function handler(req, res) {
     // CORS
     res.setHeader('Access-Control-Allow-Credentials', 'true');
@@ -355,27 +342,42 @@ module.exports = async function handler(req, res) {
 
     try {
         console.log('=== ANALYZE REQUEST ===');
-        console.log('File:', req.file ? req.file.originalname : 'NO FILE');
 
-        // Parse multipart
-        await new Promise((resolve, reject) => {
-            upload.single('cv')(req, res, (err) => {
+        // Parse form using formidable
+        const form = formidable({
+            maxFileSize: 10 * 1024 * 1024,
+            keepExtensions: true,
+        });
+
+        const [fields, files] = await new Promise((resolve, reject) => {
+            form.parse(req, (err, fields, files) => {
                 if (err) reject(err);
-                else resolve();
+                else resolve([fields, files]);
             });
         });
 
-        if (!req.file) {
+        const cvFile = files.cv?.[0] || files.cv;
+        const jobDescription = fields.jobDescription?.[0] || fields.jobDescription;
+
+        if (!cvFile) {
             return res.status(400).json({ error: 'No CV file uploaded' });
         }
 
-        const { jobDescription } = req.body;
         if (!jobDescription) {
             return res.status(400).json({ error: 'Job description is required' });
         }
 
-        const cvTextRaw = await extractText(req.file.buffer, inferFileType(req.file, req.file.buffer));
+        console.log('File received:', cvFile.originalFilename || cvFile.newFilename);
+
+        const buffer = await fs.readFile(cvFile.filepath);
+        const mimetype = inferFileType(cvFile, buffer);
+
+        console.log('File type:', mimetype);
+
+        const cvTextRaw = await extractText(buffer, mimetype);
         const cvText = normalizeForPrompt(cvTextRaw);
+
+        console.log('CV text extracted, length:', cvText.length);
 
         const cvScan = cvText
             .replace(/[\u200B-\u200D\uFEFF]/g, '')
@@ -416,7 +418,7 @@ module.exports = async function handler(req, res) {
         const datesFound = monthYear.test(cvScan) || yearRange.test(cvScan);
         const looksConsistent = (cvScan.match(yearRange)?.length || 0) >= 1 || (cvScan.match(monthYear)?.length || 0) >= 2;
 
-        const fileType = inferFileType(req.file, req.file.buffer);
+        const fileType = mimetype;
         const allowedTypes = new Set([
             'application/pdf',
             'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -424,8 +426,6 @@ module.exports = async function handler(req, res) {
             'application/octet-stream'
         ]);
         const fileAllowed = allowedTypes.has(fileType);
-
-        // Education match already computed above using normalized JD
 
         const checks = {
             contact: { email: hasEmail, phone: hasPhone, linkedin: hasLinkedIn },
@@ -441,9 +441,9 @@ module.exports = async function handler(req, res) {
             file: { type: fileType || 'unknown', allowed: fileAllowed },
             educationMatch: edu
         };
-        // ===== end checks =====
 
-        // Embeddings on cleaned text
+        console.log('Calling OpenAI embeddings...');
+
         const embeddingResp = await openai.embeddings.create({
             model: 'text-embedding-3-small',
             input: [cvText, jobDescription]
@@ -490,6 +490,8 @@ ${jobDescription}
 
 CV (clean):
 ${cvText}`;
+
+        console.log('Calling OpenAI chat completion...');
 
         const completion = await openai.chat.completions.create({
             model: "mistralai/mistral-7b-instruct:free",
@@ -629,10 +631,11 @@ ${cvText}`;
 
     } catch (error) {
         console.error('=== ERROR IN ANALYZE ===');
-        console.error(error);
+        console.error(error.stack);
         return res.status(500).json({
             error: 'Failed to analyze CV',
-            details: error.message
+            details: error.message,
+            stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
         });
     }
 };
