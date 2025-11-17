@@ -434,7 +434,7 @@ function App() {
                 </div>
               </div>
 
-              <div className='text-2xl font-medium mt-10 font-(family-name:--font-inter)'>Hard Skills</div>
+              <div className='text-xl md:text-2xl font-medium mt-10 font-(family-name:--font-inter)'>Hard Skills</div>
               <p className="mt-2">Hard skills are job‑specific, teachable, and measurable abilities (tools, software, technical processes) gained through formal education, training, or on‑the‑job practice, and they carry significant weight in your overall match score.</p>
               <p className='text-sm mt-3'><i className="fa-regular fa-lightbulb"></i><strong> Tip: </strong>Align each listed skill with the exact wording in the job description and prioritize those repeated most frequently.</p>
               <div className='mt-4 grid grid-cols-1 md:grid-cols-3 gap-4'>
@@ -475,7 +475,7 @@ function App() {
                 </div>
               </div>
 
-              <div className='text-2xl font-medium mt-10 font-(family-name:--font-inter)'>Soft Skills</div>
+              <div className='text-xl md:text-2xl font-medium mt-10 font-(family-name:--font-inter)'>Soft Skills</div>
               <p className='mt-2'>Soft skills are transferable, personality-driven abilities—like communication and time management—that can be learned and apply across roles, and they have a moderate impact on your match score.</p>
               <div className='mt-4 grid grid-cols-1 md:grid-cols-3 gap-4'>
 
@@ -541,13 +541,13 @@ function App() {
                 </div>
               </div>
 
-              <div className='text-2xl font-medium mt-10 font-(family-name:--font-inter)'>Recruiter Tips</div>
+              <div className='text-xl md:text-2xl font-medium mt-10 font-(family-name:--font-inter)'>Recruiter Tips</div>
               <p className='mt-2'>Beyond ATS scans, recruiters assess alignment, measurable impact, resume length, and your online presence. Below is how your resume performs in those areas.</p>
               <div className='p-3 bg-white rounded shadow-sm mt-3'>
                 <div className="text-sm flex flex-col mt-2 space-y-2">
 
                   {/* Job Level Match */}
-                  <div className='grid grid-cols-[200px_1fr] gap-4 items-start border-b-2 border-b-gray-200 p-3'>
+                  <div className='grid grid-rows-[30px_1fr] md:grid-rows-none md:grid-cols-[200px_1fr] gap-4 items-start border-b-2 border-b-gray-200 p-3'>
                     <div className='font-medium text-md font-(family-name:--font-inter)'>Job Level Match</div>
                     <ul className='list-none space-y-1'>
                       <li>
@@ -560,7 +560,7 @@ function App() {
                   </div>
 
                   {/* Measurable Results */}
-                  <div className='grid grid-cols-[200px_1fr] gap-4 items-start border-b-2 border-b-gray-200 p-3'>
+                  <div className='grid grid-rows-[30px_1fr] md:grid-rows-none md:grid-cols-[200px_1fr] gap-4 items-start border-b-2 border-b-gray-200 p-3'>
                     <div className='font-medium text-md font-(family-name:--font-inter)'>Measurable Results</div>
                     <ul className='list-none space-y-1'>
                       <li>
@@ -573,7 +573,7 @@ function App() {
                   </div>
 
                   {/* Resume Tone / Word Count */}
-                  <div className='grid grid-cols-[200px_1fr] gap-4 items-start border-b-2 border-b-gray-200 p-3'>
+                  <div className='grid grid-rows-[30px_1fr] md:grid-rows-none md:grid-cols-[200px_1fr] gap-4 items-start border-b-2 border-b-gray-200 p-3'>
                     <div className='font-medium text-md font-(family-name:--font-inter)'>Resume Tone, Word Count</div>
                     <ul className='list-none space-y-1'>
                       <li>
@@ -586,7 +586,7 @@ function App() {
                   </div>
 
                   {/* Web Presence */}
-                  <div className='grid grid-cols-[200px_1fr] gap-4 items-start p-3'>
+                  <div className='grid grid-rows-[30px_1fr] md:grid-rows-none md:grid-cols-[200px_1fr] gap-4 items-start p-3'>
                     <div className='font-medium text-md font-(family-name:--font-inter)'>Web Presence</div>
                     <ul className='list-none space-y-1'>
                       <li>
