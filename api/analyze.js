@@ -1,11 +1,10 @@
-const express = require('express');
-const cors = require('cors');
-const OpenAI = require('openai');
+// api/analyze.js
 const multer = require('multer');
 const mammoth = require('mammoth');
 const pdfParse = require('pdf-parse');
+const OpenAI = require('openai');
 
-// Rebuild PDF text order and fix orphan ALL-CAPS tokens (e.g., EXPERIENCE)
+// ===== PĂSTREAZĂ TOATE HELPER FUNCTIONS =====
 async function pdfPageRender(pageData) {
     const textContent = await pageData.getTextContent({ normalizeWhitespace: true });
 
@@ -112,24 +111,6 @@ async function pdfPageRender(pageData) {
     return raw.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
-const app = express();
-
-const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-    baseURL: process.env.OPENAI_BASE_URL || 'https://openrouter.ai/api/v1'
-});
-
-app.use(express.json({ limit: '10mb' }));
-app.use(cors({ origin: 'http://localhost:3000' }));
-
-const upload = multer({
-    storage: multer.memoryStorage(),
-    limits: { fileSize: 10 * 1024 * 1024 }
-});
-
-app.get('/health', (req, res) => res.json({ status: 'ok' }));
-
-// Helper: extract text from buffer
 async function extractText(buffer, mimetype) {
     if (mimetype === 'application/pdf') {
         try {
@@ -256,7 +237,6 @@ function normalizeForPrompt(text = '') {
     return t.trim();
 }
 
-// Best-effort file type inference
 function inferFileType(file, buffer) {
     const name = (file?.originalname || '').toLowerCase();
     const mm = file?.mimetype || '';
@@ -269,7 +249,6 @@ function inferFileType(file, buffer) {
     return 'application/octet-stream';
 }
 
-// Education detection helpers (exclude short tokens; support curly quotes and diacritics)
 const EDU_LEVELS = [
     // PhD / Doctorate
     { key: 'phd', rank: 5, rx: /\b(ph\.?\s*d\.?|phd|doctorate|doctoral|doctor of philosophy)\b/i },
@@ -339,24 +318,69 @@ function educationMatchInfo(cvText, jdText) {
     };
 }
 
-app.post('/analyze', upload.single('cv'), async (req, res) => {
+// ===== INITIALIZE OPENAI =====
+const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+    baseURL: process.env.OPENAI_BASE_URL || 'https://openrouter.ai/api/v1'
+});
+
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 10 * 1024 * 1024 }
+});
+
+// ❌ ȘTERGE TOATE LINIILE CU EXPRESS:
+// const app = express();
+// app.use(express.json(...));
+// app.use(cors(...));
+// app.get('/health', ...);
+// app.post('/analyze', ...);
+// app.listen(...);
+
+// ✅ PĂSTREAZĂ DOAR SERVERLESS HANDLER:
+module.exports = async function handler(req, res) {
+    // CORS
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+    if (req.method === 'OPTIONS') {
+        return res.status(200).end();
+    }
+
+    if (req.method !== 'POST') {
+        return res.status(405).json({ error: 'Method not allowed' });
+    }
+
     try {
         console.log('=== ANALYZE REQUEST ===');
         console.log('File:', req.file ? req.file.originalname : 'NO FILE');
-        console.log('Mimetype:', req.file?.mimetype);
-        console.log('Job Description length:', req.body.jobDescription?.length || 0);
+
+        // Parse multipart
+        await new Promise((resolve, reject) => {
+            upload.single('cv')(req, res, (err) => {
+                if (err) reject(err);
+                else resolve();
+            });
+        });
+
+        if (!req.file) {
+            return res.status(400).json({ error: 'No CV file uploaded' });
+        }
+
+        const { jobDescription } = req.body;
+        if (!jobDescription) {
+            return res.status(400).json({ error: 'Job description is required' });
+        }
 
         const cvTextRaw = await extractText(req.file.buffer, inferFileType(req.file, req.file.buffer));
         const cvText = normalizeForPrompt(cvTextRaw);
 
-        const { jobDescription } = req.body;
-
-        // Make a scan-safe copy for regex (strip zero-width, collapse spaces around pipes)
         const cvScan = cvText
             .replace(/[\u200B-\u200D\uFEFF]/g, '')
             .replace(/\s*\|\s*/g, ' | ');
 
-        // Normalize JD before detecting education
         const jdScan = (jobDescription || '')
             .replace(/[\u200B-\u200D\uFEFF]/g, ' ')
             .replace(/[\u2018\u2019\u201A\u201B]/g, "'")
@@ -364,10 +388,9 @@ app.post('/analyze', upload.single('cv'), async (req, res) => {
             .replace(/[ \t]{2,}/g, ' ')
             .trim();
 
-        // Education match info (use normalized JD)
         const edu = educationMatchInfo(cvScan, jdScan);
 
-        // ===== Searchability / ATS Tips checks =====
+        // ATS checks
         const hasEmail = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(cvScan);
         const hasPhone = /(\+?\d{1,3}[\s.-]?)?(\(?\d{2,4}\)?[\s.-]?)?[\d\s.-]{6,}/.test(cvScan);
         const hasLinkedIn = /linkedin\.com\/in\//i.test(cvScan);
@@ -592,7 +615,7 @@ ${cvText}`;
             edu: eduScore
         });
 
-        res.json({
+        return res.status(200).json({
             matchScore,
             keywords: analysis.keywords || [],
             hardSkills: analysis.hardSkills || { matched: [], partial: [], missing: [] },
@@ -603,48 +626,13 @@ ${cvText}`;
             recruiterTips,
             cleanedCvText: cvText
         });
-    } catch (err) {
-        console.error('=== ERROR IN ANALYZE ===');
-        console.error(err);
-        res.status(500).json({ error: String(err.message || err) });
-    }
-});
-
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, '0.0.0.0', () => console.log(`Backend running on ${PORT}`));
-
-// ❗ IMPORTANT: Export ca handler Vercel
-export default async function handler(req, res) {
-    // CORS
-    res.setHeader('Access-Control-Allow-Credentials', 'true');
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
-    if (req.method === 'OPTIONS') {
-        return res.status(200).end();
-    }
-
-    if (req.method !== 'POST') {
-        return res.status(405).json({ error: 'Method not allowed' });
-    }
-
-    try {
-        // Parse multipart
-        await new Promise((resolve, reject) => {
-            upload.single('cv')(req, res, (err) => {
-                if (err) reject(err);
-                else resolve();
-            });
-        });
-
-        // ...rest of your code...
 
     } catch (error) {
-        console.error('Error:', error);
+        console.error('=== ERROR IN ANALYZE ===');
+        console.error(error);
         return res.status(500).json({
             error: 'Failed to analyze CV',
             details: error.message
         });
     }
-}
+};
