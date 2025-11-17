@@ -1,6 +1,6 @@
 const express = require('express');
 const cors = require('cors');
-const OpenAI = require('openai/index.js');
+const OpenAI = require('openai');
 const multer = require('multer');
 const mammoth = require('mammoth');
 const pdfParse = require('pdf-parse');
@@ -116,13 +116,16 @@ const app = express();
 
 const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
-    baseURL: process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1'
+    baseURL: process.env.OPENAI_BASE_URL || 'https://openrouter.ai/api/v1'
 });
 
 app.use(express.json({ limit: '10mb' }));
 app.use(cors({ origin: 'http://localhost:3000' }));
 
-const upload = multer({ storage: multer.memoryStorage() });
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 10 * 1024 * 1024 }
+});
 
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
@@ -609,3 +612,39 @@ ${cvText}`;
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, '0.0.0.0', () => console.log(`Backend running on ${PORT}`));
+
+// ❗ IMPORTANT: Export ca handler Vercel
+export default async function handler(req, res) {
+    // CORS
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+    if (req.method === 'OPTIONS') {
+        return res.status(200).end();
+    }
+
+    if (req.method !== 'POST') {
+        return res.status(405).json({ error: 'Method not allowed' });
+    }
+
+    try {
+        // Parse multipart
+        await new Promise((resolve, reject) => {
+            upload.single('cv')(req, res, (err) => {
+                if (err) reject(err);
+                else resolve();
+            });
+        });
+
+        // ...rest of your code...
+
+    } catch (error) {
+        console.error('Error:', error);
+        return res.status(500).json({
+            error: 'Failed to analyze CV',
+            details: error.message
+        });
+    }
+}
