@@ -1,5 +1,5 @@
 // api/analyze.js
-const formidable = require('formidable');
+const { formidable } = require('formidable'); // ✅ Destructured import
 const mammoth = require('mammoth');
 const pdfParse = require('pdf-parse');
 const OpenAI = require('openai');
@@ -326,7 +326,6 @@ const openai = new OpenAI({
 
 // ===== SERVERLESS HANDLER =====
 module.exports = async function handler(req, res) {
-    // CORS
     res.setHeader('Access-Control-Allow-Credentials', 'true');
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -349,10 +348,17 @@ module.exports = async function handler(req, res) {
             keepExtensions: true,
         });
 
+        console.log('Parsing form data...');
+
         const [fields, files] = await new Promise((resolve, reject) => {
             form.parse(req, (err, fields, files) => {
-                if (err) reject(err);
-                else resolve([fields, files]);
+                if (err) {
+                    console.error('Form parse error:', err);
+                    reject(err);
+                } else {
+                    console.log('Form parsed successfully');
+                    resolve([fields, files]);
+                }
             });
         });
 
