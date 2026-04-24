@@ -135,7 +135,6 @@ Create `.env.local` in root:
 ```env
 OPENAI_API_KEY=your_openai_or_openrouter_key
 OPENAI_BASE_URL=https://openrouter.ai/api/v1
-OPENAI_MODEL=mistralai/mistral-7b-instruct:free
 ```
 
 ## 🚀 Development

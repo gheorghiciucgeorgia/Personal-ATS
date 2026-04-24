@@ -50,9 +50,7 @@ interface AnalysisResult {
   recruiterTips?: RecruiterTips; // << add
 }
 
-const API_URL = process.env.NODE_ENV === 'production'
-  ? '/api/analyze'  // Vercel
-  : 'http://localhost:5000/analyze';  // Docker local
+const API_URL = '/api/analyze';
 
 function App() {
   const [cvText, setCvText] = useState<string>(() =>
@@ -179,7 +177,7 @@ function App() {
     } catch (err: unknown) {
       console.error(err);
       if (axios.isAxiosError(err)) {
-        setError(err.response?.data?.error || err.message);
+        setError(err.response?.data?.details || err.response?.data?.error || err.message);
       } else if (err instanceof Error) {
         setError(err.message);
       } else {

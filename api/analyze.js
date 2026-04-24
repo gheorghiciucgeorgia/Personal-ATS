@@ -319,6 +319,9 @@ function educationMatchInfo(cvText, jdText) {
 }
 
 // ===== INITIALIZE OPENAI =====
+const CHAT_MODEL = process.env.OPENAI_MODEL || 'openai/gpt-4o-mini';
+const EMBEDDING_MODEL = process.env.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-small';
+
 const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
     baseURL: process.env.OPENAI_BASE_URL || 'https://openrouter.ai/api/v1'
@@ -451,7 +454,7 @@ module.exports = async function handler(req, res) {
         console.log('Calling OpenAI embeddings...');
 
         const embeddingResp = await openai.embeddings.create({
-            model: 'text-embedding-3-small',
+            model: EMBEDDING_MODEL,
             input: [cvText, jobDescription]
         });
 
@@ -499,7 +502,7 @@ ${cvText}`;
         console.log('Calling OpenAI chat completion...');
 
         const completion = await openai.chat.completions.create({
-            model: "mistralai/mistral-7b-instruct:free",
+            model: CHAT_MODEL,
             messages: [{ role: "user", content: prompt }],
             response_format: { type: "json_object" },
             temperature: 0.3
@@ -637,9 +640,15 @@ ${cvText}`;
     } catch (error) {
         console.error('=== ERROR IN ANALYZE ===');
         console.error(error.stack);
+
+        let details = error.message;
+        if (typeof details === 'string' && details.includes('No endpoints found')) {
+            details = `${details} Set OPENAI_MODEL in .env to a model available on your provider.`;
+        }
+
         return res.status(500).json({
             error: 'Failed to analyze CV',
-            details: error.message,
+            details,
             stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
         });
     }
